@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Foco visível para acessibilidade (WCAG 2.1 AA). */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-brand-600;
+}

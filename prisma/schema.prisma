@@ -1,0 +1,448 @@
+// Sistema de Controle de Estoque Escolar — schema Prisma
+// Fonte da verdade do banco. Ver specs/001-controle-estoque-escolar/data-model.md
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- Enums ----------------
+
+enum ModuleType {
+  FOOD
+  SCHOOL_MATERIAL
+}
+
+enum MovementType {
+  ENTRADA
+  SAIDA
+  CONSUMO
+  PREPARO_MERENDA
+  DISTRIBUICAO
+  DEVOLUCAO
+  PERDA
+  AVARIA
+  PRODUTO_VENCIDO
+  TRANSFERENCIA_INTERNA
+  AJUSTE
+}
+
+enum MovementDirection {
+  IN
+  OUT
+}
+
+enum ReviewStatus {
+  NAO_APLICAVEL
+  PENDENTE_REVISAO
+  REVISADO
+}
+
+enum DistributionTarget {
+  ALUNO
+  TURMA
+  PROFESSOR
+  SETOR
+  ATIVIDADE
+  OUTRO
+}
+
+enum AuditAction {
+  LOGIN
+  USER_CREATE
+  USER_UPDATE
+  ITEM_CREATE
+  ITEM_UPDATE
+  MOVEMENT
+  ADJUSTMENT
+  ADJUSTMENT_REVIEW
+  CANCELLATION
+  PERMISSION_CHANGE
+  SCHOOL_CREATE
+}
+
+enum InventoryStatus {
+  ABERTO
+  EM_CONTAGEM
+  FECHADO
+  CANCELADO
+}
+
+// ---------------- Identidade / RBAC ----------------
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        UserSchool[]
+  items        Item[]
+  stocks       Stock[]
+  movements    StockMovement[]
+  inventories  Inventory[]
+  suppliers    Supplier[]
+  locations    StorageLocation[]
+  categories   Category[]
+  foodBatches  FoodBatch[]
+  configs      AppConfig[]
+  reviewNotifs ReviewNotification[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roles     UserRole[]
+  schools   UserSchool[]
+  movements StockMovement[]
+  auditLogs AuditLog[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String     @id @default(cuid())
+  key         String     @unique
+  description String?
+  moduleScope ModuleType?
+  createdAt   DateTime   @default(now())
+
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UserSchool {
+  id       String  @id @default(cuid())
+  userId   String
+  schoolId String
+  active   Boolean @default(true)
+  createdAt DateTime @default(now())
+  user     User    @relation(fields: [userId], references: [id])
+  school   School  @relation(fields: [schoolId], references: [id])
+
+  @@unique([userId, schoolId])
+}
+
+// ---------------- Cadastros base ----------------
+
+model Category {
+  id        String     @id @default(cuid())
+  schoolId  String
+  name      String
+  module    ModuleType
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  createdById String?
+  school    School     @relation(fields: [schoolId], references: [id])
+  items     Item[]
+
+  @@unique([schoolId, module, name])
+}
+
+model UnitOfMeasure {
+  id           String   @id @default(cuid())
+  schoolId     String?
+  name         String
+  abbreviation String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  items        Item[]
+
+  @@unique([schoolId, abbreviation])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  document  String?
+  contact   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdById String?
+  school    School   @relation(fields: [schoolId], references: [id])
+  batches   FoodBatch[]
+}
+
+model StorageLocation {
+  id          String   @id @default(cuid())
+  schoolId    String
+  code        String
+  warehouse   String
+  shelf       String
+  rack        String
+  position    String?
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  school      School   @relation(fields: [schoolId], references: [id])
+  items       Item[]
+
+  @@unique([schoolId, code])
+}
+
+// ---------------- Catálogo ----------------
+
+model Item {
+  id               String     @id @default(cuid())
+  schoolId         String
+  code             String     @unique
+  module           ModuleType
+  name             String
+  description      String?
+  categoryId       String
+  unitOfMeasureId  String
+  storageLocationId String?
+  brand            String?
+  minStock         Decimal    @default(0)
+  active           Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  createdById      String?
+
+  school          School           @relation(fields: [schoolId], references: [id])
+  category        Category         @relation(fields: [categoryId], references: [id])
+  unitOfMeasure   UnitOfMeasure    @relation(fields: [unitOfMeasureId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id])
+  characteristics ItemCharacteristic[]
+  stock           Stock?
+  foodBatches     FoodBatch[]
+  movementItems   StockMovementItem[]
+  inventoryItems  InventoryItem[]
+
+  @@index([schoolId, module, name])
+}
+
+model ItemCharacteristic {
+  id        String   @id @default(cuid())
+  itemId    String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  item      Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([itemId, key])
+  @@index([key, value])
+}
+
+// ---------------- Merenda: lotes ----------------
+
+model FoodBatch {
+  id              String    @id @default(cuid())
+  schoolId        String
+  itemId          String
+  batchNumber     String
+  manufactureDate DateTime?
+  expiryDate      DateTime
+  supplierId      String?
+  quantity        Decimal   @default(0)
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdById     String?
+
+  school        School   @relation(fields: [schoolId], references: [id])
+  item          Item     @relation(fields: [itemId], references: [id])
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  movementItems StockMovementItem[]
+  inventoryItems InventoryItem[]
+
+  @@unique([itemId, batchNumber, expiryDate])
+  @@index([itemId, expiryDate])
+  @@index([schoolId, expiryDate])
+}
+
+// ---------------- Estoque / Movimentação ----------------
+
+model Stock {
+  id        String   @id @default(cuid())
+  schoolId  String
+  itemId    String   @unique
+  quantity  Decimal  @default(0)
+  updatedAt DateTime @updatedAt
+  school    School   @relation(fields: [schoolId], references: [id])
+  item      Item     @relation(fields: [itemId], references: [id])
+}
+
+model StockMovement {
+  id                      String            @id @default(cuid())
+  number                  String            @unique
+  schoolId                String
+  module                  ModuleType
+  type                    MovementType
+  direction               MovementDirection
+  justification           String?
+  notes                   String?
+  referenceDocument       String?
+  distributionTarget      DistributionTarget?
+  distributionTargetLabel String?
+  reviewStatus            ReviewStatus      @default(NAO_APLICAVEL)
+  userId                  String
+  inventoryId             String?
+  createdAt               DateTime          @default(now())
+
+  school     School              @relation(fields: [schoolId], references: [id])
+  user       User                @relation(fields: [userId], references: [id])
+  inventory  Inventory?          @relation(fields: [inventoryId], references: [id])
+  items      StockMovementItem[]
+  reviewNotif ReviewNotification?
+
+  @@index([schoolId, createdAt])
+  @@index([type, createdAt])
+}
+
+model StockMovementItem {
+  id              String   @id @default(cuid())
+  movementId      String
+  itemId          String
+  foodBatchId     String?
+  quantity        Decimal
+  previousBalance Decimal
+  newBalance      Decimal
+  createdAt       DateTime @default(now())
+
+  movement  StockMovement @relation(fields: [movementId], references: [id])
+  item      Item          @relation(fields: [itemId], references: [id])
+  foodBatch FoodBatch?    @relation(fields: [foodBatchId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([movementId])
+}
+
+// ---------------- Inventário ----------------
+
+model Inventory {
+  id          String          @id @default(cuid())
+  schoolId    String
+  module      ModuleType
+  status      InventoryStatus @default(ABERTO)
+  description String?
+  startedById String
+  closedById  String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  closedAt    DateTime?
+
+  school    School          @relation(fields: [schoolId], references: [id])
+  items     InventoryItem[]
+  movements StockMovement[]
+}
+
+model InventoryItem {
+  id             String   @id @default(cuid())
+  inventoryId    String
+  itemId         String
+  foodBatchId    String?
+  systemQuantity Decimal
+  countedQuantity Decimal
+  difference     Decimal
+  justification  String?
+  adjusted       Boolean  @default(false)
+  movementItemId String?
+  createdAt      DateTime @default(now())
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
+  foodBatch FoodBatch? @relation(fields: [foodBatchId], references: [id])
+}
+
+// ---------------- Auditoria / apoio ----------------
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  schoolId   String?
+  action     AuditAction
+  resource   String
+  resourceId String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([action, createdAt])
+  @@index([schoolId, createdAt])
+}
+
+model ReviewNotification {
+  id             String   @id @default(cuid())
+  schoolId       String
+  movementId     String   @unique
+  assignedToRole String?
+  assignedToUserId String?
+  status         String   @default("PENDENTE")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  school   School        @relation(fields: [schoolId], references: [id])
+  movement StockMovement @relation(fields: [movementId], references: [id])
+}
+
+// Contador de códigos. `scope` é a chave única: sequências globais usam o nome puro
+// (ex.: "ITEM_MER") e sequências por escola embutem o id (ex.: "MOVEMENT:<schoolId>").
+// Evita a semântica de NULL distinto do PostgreSQL em índices únicos compostos.
+model CodeSequence {
+  id        String   @id @default(cuid())
+  scope     String   @unique
+  nextValue Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+model AppConfig {
+  id         String   @id @default(cuid())
+  schoolId   String
+  key        String
+  value      String
+  updatedAt  DateTime @updatedAt
+  updatedById String?
+  school     School   @relation(fields: [schoolId], references: [id])
+
+  @@unique([schoolId, key])
+}
