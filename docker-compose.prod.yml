@@ -1,0 +1,95 @@
+# Deploy de produção — integra-se ao Traefik JÁ EXISTENTE na VPS.
+# Não publica portas no host e não altera nenhum outro serviço/container.
+#
+# Variáveis obrigatórias (ver .env.production):
+#   TRAEFIK_NETWORK, TRAEFIK_CERTRESOLVER, APP_HOST, API_HOST,
+#   POSTGRES_PASSWORD, SESSION_SECRET
+
+name: estoque-escolar
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: estoque_escolar_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: estoque
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: estoque_escolar
+      # A ordenação pt-BR vem da collation ICU criada na migration
+      # 20260814010000_pt_br_collation (musl ignora locales do sistema).
+    volumes:
+      - estoque_pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U estoque -d estoque_escolar']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: estoque-escolar:latest
+    container_name: estoque_escolar_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      HOSTNAME: '0.0.0.0'
+      DATABASE_URL: postgresql://estoque:${POSTGRES_PASSWORD}@db:5432/estoque_escolar?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:?defina SESSION_SECRET}
+      NEAR_EXPIRY_DAYS_DEFAULT: '30'
+      NEXT_TELEMETRY_DISABLED: '1'
+    networks:
+      - internal
+      - proxy
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=${TRAEFIK_NETWORK}'
+
+      # ---- Frontend: estoque.tkrtecnologia.cloud ----
+      - 'traefik.http.routers.estoque-web.rule=Host(`${APP_HOST}`)'
+      - 'traefik.http.routers.estoque-web.entrypoints=websecure'
+      - 'traefik.http.routers.estoque-web.tls=true'
+      - 'traefik.http.routers.estoque-web.tls.certresolver=${TRAEFIK_CERTRESOLVER}'
+      - 'traefik.http.routers.estoque-web.service=estoque-app'
+
+      # ---- Backend/API: apiestoque.tkrtecnologia.cloud ----
+      # Mesma aplicação (Next.js monolito: as rotas de API vivem em /api).
+      - 'traefik.http.routers.estoque-api.rule=Host(`${API_HOST}`)'
+      - 'traefik.http.routers.estoque-api.entrypoints=websecure'
+      - 'traefik.http.routers.estoque-api.tls=true'
+      - 'traefik.http.routers.estoque-api.tls.certresolver=${TRAEFIK_CERTRESOLVER}'
+      - 'traefik.http.routers.estoque-api.service=estoque-app'
+
+      # ---- Redirect HTTP -> HTTPS (escopo apenas destes routers) ----
+      - 'traefik.http.middlewares.estoque-https.redirectscheme.scheme=https'
+      - 'traefik.http.middlewares.estoque-https.redirectscheme.permanent=true'
+      - 'traefik.http.routers.estoque-web-http.rule=Host(`${APP_HOST}`)'
+      - 'traefik.http.routers.estoque-web-http.entrypoints=web'
+      - 'traefik.http.routers.estoque-web-http.middlewares=estoque-https'
+      - 'traefik.http.routers.estoque-web-http.service=estoque-app'
+      - 'traefik.http.routers.estoque-api-http.rule=Host(`${API_HOST}`)'
+      - 'traefik.http.routers.estoque-api-http.entrypoints=web'
+      - 'traefik.http.routers.estoque-api-http.middlewares=estoque-https'
+      - 'traefik.http.routers.estoque-api-http.service=estoque-app'
+
+      - 'traefik.http.services.estoque-app.loadbalancer.server.port=3000'
+
+volumes:
+  estoque_pgdata:
+    name: estoque_escolar_pgdata
+
+networks:
+  internal:
+    name: estoque_escolar_internal
+  proxy:
+    name: ${TRAEFIK_NETWORK}
+    external: true
