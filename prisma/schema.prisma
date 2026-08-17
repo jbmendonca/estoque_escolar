@@ -156,6 +156,8 @@ model User {
   name         String
   email        String   @unique
   passwordHash String
+  /// Imagem de perfil como data URI (redimensionada no cliente). Nulo = sem foto.
+  avatarUrl    String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

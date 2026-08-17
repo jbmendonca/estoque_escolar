@@ -14,14 +14,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const profile = await getCurrentUserProfile();
   const sections = visibleNavigation(user, user.schoolIds[0]);
+  const initials = (profile?.name ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       <aside className="w-full shrink-0 border-b border-slate-200 bg-white lg:w-64 lg:border-b-0 lg:border-r">
         <div className="p-4">
           <p className="text-sm font-bold text-brand-700">Estoque Escolar</p>
-          <p className="mt-1 truncate text-xs text-slate-500">{profile?.name}</p>
-          <p className="truncate text-xs text-slate-400">{user.roles.join(', ')}</p>
+          <Link
+            href="/perfil"
+            title="Meu perfil"
+            className="mt-2 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-50"
+          >
+            {profile?.avatarUrl ? (
+              <img
+                src={profile.avatarUrl}
+                alt="Foto de perfil"
+                className="h-9 w-9 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                {initials || '?'}
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-medium text-slate-700">
+                {profile?.name}
+              </span>
+              <span className="block truncate text-xs text-slate-400">{user.roles.join(', ')}</span>
+            </span>
+          </Link>
         </div>
 
         <nav aria-label="Menu principal" className="px-2 pb-4">
