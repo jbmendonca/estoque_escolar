@@ -24,6 +24,7 @@ export const NAVIGATION: NavSection[] = [
     title: 'Merenda Escolar',
     items: [
       { label: 'Estoque', href: '/merenda/estoque', permission: 'item.view', module: ModuleType.FOOD },
+      { label: 'Cadastrar item', href: '/cadastro-item?module=FOOD', permission: 'item.create', module: ModuleType.FOOD },
       { label: 'Entradas', href: '/merenda/entradas', permission: 'movement.create', module: ModuleType.FOOD },
       { label: 'Saídas', href: '/merenda/saidas', permission: 'movement.create', module: ModuleType.FOOD },
       { label: 'Lotes e Validades', href: '/merenda/lotes', permission: 'item.view', module: ModuleType.FOOD },
@@ -36,6 +37,7 @@ export const NAVIGATION: NavSection[] = [
     title: 'Materiais Escolares',
     items: [
       { label: 'Estoque', href: '/materiais/estoque', permission: 'item.view', module: ModuleType.SCHOOL_MATERIAL },
+      { label: 'Cadastrar item', href: '/cadastro-item?module=SCHOOL_MATERIAL', permission: 'item.create', module: ModuleType.SCHOOL_MATERIAL },
       { label: 'Entradas', href: '/materiais/entradas', permission: 'movement.create', module: ModuleType.SCHOOL_MATERIAL },
       { label: 'Distribuições/Saídas', href: '/materiais/distribuicoes', permission: 'movement.create', module: ModuleType.SCHOOL_MATERIAL },
       { label: 'Movimentações', href: '/materiais/movimentacoes', permission: 'movement.view', module: ModuleType.SCHOOL_MATERIAL },

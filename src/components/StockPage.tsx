@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { AppError } from '@/lib/errors';
 import { listItems } from '@/modules/catalogo/item-service';
 import { requireAuth } from '@/server/guard';
@@ -54,12 +55,26 @@ export async function StockPage({
     characteristics: i.characteristics,
   }));
 
+  const canCreate = can(user, 'item.create', { schoolId, module });
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Itens em ordem alfabética. Busca, filtros e paginação são feitos no servidor.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Itens em ordem alfabética. Busca, filtros e paginação são feitos no servidor.
+          </p>
+        </div>
+        {canCreate && (
+          <Link
+            href={`/cadastro-item?module=${module}`}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          >
+            + Cadastrar item
+          </Link>
+        )}
+      </div>
 
       <form method="get" action={basePath} className="mt-4 flex flex-wrap gap-2">
         <input

@@ -18,7 +18,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",
-    "seed:prod": "tsx prisma/seed-prod.ts"
+    "seed:prod": "tsx prisma/seed-prod.ts",
+    "seed:catalog": "tsx prisma/seed-catalog.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed-prod.ts"
