@@ -45,6 +45,9 @@ export function toErrorResponse(error: unknown): {
       body: { error: { code: error.code, message: error.message, details: error.details } },
     };
   }
+  // Erro inesperado: o cliente recebe uma mensagem genérica (sem stack/SQL),
+  // mas o original é registrado no servidor — do contrário a falha desaparece.
+  console.error('[unhandled]', error);
   return {
     status: 500,
     body: { error: { code: 'INTERNAL', message: 'Erro interno inesperado.' } },

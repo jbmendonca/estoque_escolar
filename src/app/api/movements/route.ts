@@ -4,7 +4,7 @@ import { toErrorResponse, AppError } from '@/lib/errors';
 import { createMovementSchema } from '@/modules/movimentacoes/movement.schema';
 import { createMovement } from '@/modules/movimentacoes/movement-service';
 import { requirePermission, resolveSchoolId } from '@/server/guard';
-import { isAdmin } from '@/server/rbac';
+import { resolveVisibleModules, schoolScopeFilter } from '@/server/rbac';
 import type { ModuleType } from '@/modules/shared/enums';
 
 export async function POST(request: Request) {
@@ -49,10 +49,13 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number(url.searchParams.get('page') ?? 1));
     const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize') ?? 20)));
 
+    // Isolamento de módulo mesmo sem `module` na query (Merenda ↔ Material).
+    const modules = resolveVisibleModules(user, schoolId, moduleParam);
+
     const where = {
-      ...(isAdmin(user) ? {} : { schoolId: { in: user.schoolIds } }),
+      ...schoolScopeFilter(user),
       ...(schoolId ? { schoolId } : {}),
-      ...(moduleParam ? { module: moduleParam } : {}),
+      module: { in: modules },
     };
 
     const [data, total] = await Promise.all([

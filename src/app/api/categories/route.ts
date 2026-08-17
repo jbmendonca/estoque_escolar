@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { AppError, toErrorResponse } from '@/lib/errors';
 import { requirePermission, resolveSchoolId } from '@/server/guard';
-import { isSuperAdmin } from '@/server/rbac';
+import { resolveVisibleModules, schoolScopeFilter } from '@/server/rbac';
 import { ModuleType } from '@/modules/shared/enums';
 
 const createBody = z.object({
@@ -23,12 +23,15 @@ export async function GET(request: Request) {
       module: moduleParam ?? undefined,
     });
 
+    const modules = resolveVisibleModules(user, schoolId, moduleParam);
+
     const data = await prisma.category.findMany({
       where: {
         active: true,
-        ...(moduleParam ? { module: moduleParam } : {}),
+        // Isolamento de módulo (Merenda ↔ Material), mesmo sem `module` na query.
+        module: { in: modules },
         // Isolamento por escola (tenant).
-        ...(schoolId ? { schoolId } : isSuperAdmin(user) ? {} : { schoolId: { in: user.schoolIds } }),
+        ...(schoolId ? { schoolId } : schoolScopeFilter(user)),
       },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, module: true, schoolId: true },

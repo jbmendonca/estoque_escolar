@@ -36,6 +36,10 @@ const PERMISSIONS: Array<{ key: string; description: string }> = [
   { key: 'school.manage', description: 'Gerenciar escolas' },
   { key: 'permission.manage', description: 'Gerenciar permissões' },
   { key: 'audit.view', description: 'Consultar auditoria' },
+  { key: 'purchase.view', description: 'Visualizar compras e sugestões' },
+  { key: 'purchase.request', description: 'Solicitar aquisição de material' },
+  { key: 'purchase.approve', description: 'Aprovar ou rejeitar solicitações' },
+  { key: 'purchase.manage', description: 'Gerenciar listas de compras e recebimento' },
 ];
 
 const ROLE_PERMISSIONS: Record<string, Array<[string, ('FOOD' | 'SCHOOL_MATERIAL')?]>> = {
@@ -44,26 +48,32 @@ const ROLE_PERMISSIONS: Record<string, Array<[string, ('FOOD' | 'SCHOOL_MATERIAL
     ['item.view'], ['item.create'], ['item.update'], ['movement.view'], ['movement.cancel'],
     ['adjustment.review'], ['report.view'], ['dashboard.view'], ['audit.view'],
     ['catalog.manage'], ['inventory.manage'], ['inventory.close'], ['user.manage'],
+    ['purchase.view'], ['purchase.request'], ['purchase.approve'], ['purchase.manage'],
   ],
   GESTOR_ESCOLAR: [
     ['item.view'], ['movement.view'], ['movement.cancel'], ['adjustment.review'],
     ['report.view'], ['dashboard.view'], ['audit.view'], ['inventory.close'],
+    ['purchase.view'], ['purchase.request'], ['purchase.approve'], ['purchase.manage'],
   ],
   SECRETARIO: [
     ['item.view'], ['item.create'], ['item.update'], ['movement.create'], ['movement.view'],
     ['report.view'], ['dashboard.view'], ['catalog.manage'], ['inventory.manage'],
+    ['purchase.view'], ['purchase.request'], ['purchase.manage'],
   ],
   COORDENADOR: [
     ['item.view'], ['movement.view'], ['movement.create'], ['report.view'], ['dashboard.view'],
+    ['purchase.view'], ['purchase.request'],
   ],
   MERENDEIRA: [
     ['item.view', 'FOOD'], ['movement.create', 'FOOD'], ['movement.view', 'FOOD'],
     ['inventory.manage', 'FOOD'], ['dashboard.view', 'FOOD'],
+    ['purchase.view', 'FOOD'], ['purchase.request', 'FOOD'],
   ],
   ASSISTENTE_ALUNO: [
     ['item.view', 'SCHOOL_MATERIAL'], ['movement.create', 'SCHOOL_MATERIAL'],
     ['movement.view', 'SCHOOL_MATERIAL'], ['inventory.manage', 'SCHOOL_MATERIAL'],
     ['dashboard.view', 'SCHOOL_MATERIAL'],
+    ['purchase.view', 'SCHOOL_MATERIAL'], ['purchase.request', 'SCHOOL_MATERIAL'],
   ],
 };
 
@@ -127,12 +137,18 @@ async function main() {
     memoryCost: 19456, timeCost: 2, outputLen: 32, parallelism: 1,
   });
 
+  // Não reescreve a senha de um admin já existente — do contrário, todo redeploy
+  // reverteria silenciosamente a senha trocada pelo administrador na aplicação.
+  // Para recuperação de acesso, rode o deploy com RESET_ADMIN_PASSWORD=true.
+  const resetAdminPassword = process.env.RESET_ADMIN_PASSWORD === 'true';
   const admin = await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
     create: { name: ADMIN_NAME, email: ADMIN_EMAIL, passwordHash },
-    // Reaplica a senha no redeploy para garantir acesso conhecido.
-    update: { passwordHash },
+    update: resetAdminPassword ? { passwordHash } : {},
   });
+  if (resetAdminPassword) {
+    console.log('Seed prod: senha do administrador redefinida (RESET_ADMIN_PASSWORD=true).');
+  }
   await prisma.userRole.upsert({
     where: { userId_roleId: { userId: admin.id, roleId: adminRole.id } },
     create: { userId: admin.id, roleId: adminRole.id },
@@ -158,18 +174,28 @@ async function main() {
     });
   }
 
-  // 6) Categorias base por módulo
+  // 6) Categorias base por módulo, com o grupo canônico usado nos relatórios
+  // e na lista de compras (alimentos separados em estivas, proteínas,
+  // hortaliças, bebidas e frutas).
   const categories = [
-    ['Cereais e Grãos', 'FOOD'], ['Hortifrúti', 'FOOD'], ['Proteínas', 'FOOD'],
-    ['Laticínios', 'FOOD'], ['Bebidas', 'FOOD'],
-    ['Escrita', 'SCHOOL_MATERIAL'], ['Papelaria', 'SCHOOL_MATERIAL'],
-    ['Artes', 'SCHOOL_MATERIAL'], ['Didáticos', 'SCHOOL_MATERIAL'],
+    ['Estivas', 'FOOD', 'ESTIVAS'],
+    ['Proteínas', 'FOOD', 'PROTEINAS'],
+    ['Hortaliças', 'FOOD', 'HORTALICAS'],
+    ['Bebidas', 'FOOD', 'BEBIDAS'],
+    ['Frutas', 'FOOD', 'FRUTAS'],
+    ['Material de escritório', 'SCHOOL_MATERIAL', 'MATERIAL_ESCRITORIO'],
+    ['Material escolar', 'SCHOOL_MATERIAL', 'MATERIAL_ESCOLAR'],
+    ['Limpeza', 'SCHOOL_MATERIAL', 'LIMPEZA'],
+    ['Informática', 'SCHOOL_MATERIAL', 'INFORMATICA'],
+    ['Artes', 'SCHOOL_MATERIAL', 'ARTES'],
+    ['Material pedagógico', 'SCHOOL_MATERIAL', 'MATERIAL_PEDAGOGICO'],
+    ['Outros', 'SCHOOL_MATERIAL', 'OUTROS'],
   ] as const;
-  for (const [name, module] of categories) {
+  for (const [name, module, group] of categories) {
     await prisma.category.upsert({
       where: { schoolId_module_name: { schoolId: school.id, module, name } },
-      create: { schoolId: school.id, name, module },
-      update: {},
+      create: { schoolId: school.id, name, module, group },
+      update: { group },
     });
   }
   console.log('Seed prod: cadastros base OK');

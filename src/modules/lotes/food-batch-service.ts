@@ -1,11 +1,12 @@
 // Consultas de lotes de alimento e alertas de validade.
 // A criação/baixa de lote acontece SOMENTE via serviço de movimentação.
 import { prisma } from '@/lib/prisma';
+import { AppError } from '@/lib/errors';
 import { classifyExpiry } from '@/modules/lotes/expiry';
 import { orderByFefo } from '@/modules/lotes/fefo';
 import { ExpiryStatus } from '@/modules/shared/enums';
 import type { AuthUser } from '@/server/rbac';
-import { isAdmin } from '@/server/rbac';
+import { canAccessSchool, schoolScopeFilter } from '@/server/rbac';
 
 export const DEFAULT_NEAR_EXPIRY_DAYS = Number(process.env.NEAR_EXPIRY_DAYS_DEFAULT ?? 30);
 
@@ -27,8 +28,14 @@ export async function setNearExpiryDays(schoolId: string, days: number, userId: 
 }
 
 function scopeFor(user: AuthUser, schoolId?: string) {
-  if (schoolId) return { schoolId };
-  return isAdmin(user) ? {} : { schoolId: { in: user.schoolIds } };
+  if (schoolId) {
+    // Valida posse antes de confiar no schoolId recebido (defesa contra IDOR).
+    if (!canAccessSchool(user, schoolId)) {
+      throw new AppError('FORBIDDEN', 'Você não tem acesso à escola informada.');
+    }
+    return { schoolId };
+  }
+  return schoolScopeFilter(user);
 }
 
 /** Lotes com saldo, ordenados por validade (FEFO). */

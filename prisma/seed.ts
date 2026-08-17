@@ -16,6 +16,10 @@ const PERMISSIONS: Array<{ key: string; description: string; moduleScope?: 'FOOD
   { key: 'inventory.manage', description: 'Realizar inventário' },
   { key: 'inventory.close', description: 'Fechar inventário' },
   { key: 'report.view', description: 'Visualizar relatórios' },
+  { key: 'purchase.view', description: 'Visualizar compras e sugestões' },
+  { key: 'purchase.request', description: 'Solicitar aquisição de material' },
+  { key: 'purchase.approve', description: 'Aprovar ou rejeitar solicitações' },
+  { key: 'purchase.manage', description: 'Gerenciar listas de compras e recebimento' },
   { key: 'dashboard.view', description: 'Visualizar dashboard' },
   { key: 'catalog.manage', description: 'Gerenciar cadastros base' },
   { key: 'user.manage', description: 'Gerenciar usuários' },
@@ -34,32 +38,47 @@ const ROLE_PERMISSIONS: Record<string, Array<[string, ('FOOD' | 'SCHOOL_MATERIAL
     ['item.view'], ['item.create'], ['item.update'], ['movement.view'], ['movement.cancel'],
     ['adjustment.review'], ['report.view'], ['dashboard.view'], ['audit.view'],
     ['catalog.manage'], ['inventory.manage'], ['inventory.close'], ['user.manage'],
+    ['purchase.view'], ['purchase.request'], ['purchase.approve'], ['purchase.manage'],
   ],
   GESTOR_ESCOLAR: [
     ['item.view'], ['movement.view'], ['movement.cancel'], ['adjustment.review'],
     ['report.view'], ['dashboard.view'], ['audit.view'], ['inventory.close'],
+    ['purchase.view'], ['purchase.request'], ['purchase.approve'], ['purchase.manage'],
   ],
   SECRETARIO: [
     ['item.view'], ['item.create'], ['item.update'], ['movement.create'], ['movement.view'],
     ['report.view'], ['dashboard.view'], ['catalog.manage'], ['inventory.manage'],
+    // Secretário organiza a compra, mas não aprova a própria solicitação.
+    ['purchase.view'], ['purchase.request'], ['purchase.manage'],
   ],
   COORDENADOR: [
     ['item.view'], ['movement.view'], ['movement.create'], ['report.view'], ['dashboard.view'],
+    ['purchase.view'], ['purchase.request'],
   ],
   // Merendeira: EXCLUSIVAMENTE módulo de Merenda (FOOD).
   MERENDEIRA: [
     ['item.view', 'FOOD'], ['movement.create', 'FOOD'], ['movement.view', 'FOOD'],
     ['inventory.manage', 'FOOD'], ['dashboard.view', 'FOOD'],
+    ['purchase.view', 'FOOD'], ['purchase.request', 'FOOD'],
   ],
   // Assistente de Aluno: EXCLUSIVAMENTE módulo de Materiais.
   ASSISTENTE_ALUNO: [
     ['item.view', 'SCHOOL_MATERIAL'], ['movement.create', 'SCHOOL_MATERIAL'],
     ['movement.view', 'SCHOOL_MATERIAL'], ['inventory.manage', 'SCHOOL_MATERIAL'],
     ['dashboard.view', 'SCHOOL_MATERIAL'],
+    ['purchase.view', 'SCHOOL_MATERIAL'], ['purchase.request', 'SCHOOL_MATERIAL'],
   ],
 };
 
 async function main() {
+  // Guarda de segurança: este seed cria contas de demonstração com senha
+  // conhecida (Admin@123). Nunca deve rodar contra produção — o deploy usa
+  // exclusivamente prisma/seed-prod.ts.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'seed.ts é apenas para desenvolvimento. Em produção use prisma/seed-prod.ts.',
+    );
+  }
   console.log('Seed: iniciando...');
 
   // 1) Permissões (com e sem escopo de módulo)
@@ -173,18 +192,42 @@ async function main() {
     });
   }
 
-  // 6) Categorias por módulo
+  // 6) Categorias por módulo, já vinculadas ao grupo canônico.
+  // Alimentos: estivas, proteínas, hortaliças, bebidas e frutas.
+  // Materiais: escritório, escolar, limpeza, informática, artes, pedagógico e outros.
   const categories = [
-    ['Cereais e Grãos', 'FOOD'], ['Hortifrúti', 'FOOD'], ['Proteínas', 'FOOD'],
-    ['Laticínios', 'FOOD'], ['Bebidas', 'FOOD'],
-    ['Escrita', 'SCHOOL_MATERIAL'], ['Papelaria', 'SCHOOL_MATERIAL'],
-    ['Artes', 'SCHOOL_MATERIAL'], ['Didáticos', 'SCHOOL_MATERIAL'],
+    ['Estivas', 'FOOD', 'ESTIVAS'],
+    ['Proteínas', 'FOOD', 'PROTEINAS'],
+    ['Hortaliças', 'FOOD', 'HORTALICAS'],
+    ['Bebidas', 'FOOD', 'BEBIDAS'],
+    ['Frutas', 'FOOD', 'FRUTAS'],
+    ['Material de escritório', 'SCHOOL_MATERIAL', 'MATERIAL_ESCRITORIO'],
+    ['Material escolar', 'SCHOOL_MATERIAL', 'MATERIAL_ESCOLAR'],
+    ['Limpeza', 'SCHOOL_MATERIAL', 'LIMPEZA'],
+    ['Informática', 'SCHOOL_MATERIAL', 'INFORMATICA'],
+    ['Artes', 'SCHOOL_MATERIAL', 'ARTES'],
+    ['Material pedagógico', 'SCHOOL_MATERIAL', 'MATERIAL_PEDAGOGICO'],
+    ['Outros', 'SCHOOL_MATERIAL', 'OUTROS'],
   ] as const;
-  for (const [name, module] of categories) {
+  for (const [name, module, group] of categories) {
     await prisma.category.upsert({
       where: { schoolId_module_name: { schoolId: school.id, module, name } },
-      create: { schoolId: school.id, name, module },
-      update: {},
+      create: { schoolId: school.id, name, module, group },
+      update: { group },
+    });
+  }
+
+  // Categorias antigas (de instalações anteriores) recebem o grupo equivalente,
+  // para que continuem aparecendo corretamente nos relatórios e nas compras.
+  const legacyGroups = [
+    ['Cereais e Grãos', 'ESTIVAS'], ['Hortifrúti', 'HORTALICAS'], ['Laticínios', 'PROTEINAS'],
+    ['Escrita', 'MATERIAL_ESCOLAR'], ['Papelaria', 'MATERIAL_ESCRITORIO'],
+    ['Didáticos', 'MATERIAL_PEDAGOGICO'],
+  ] as const;
+  for (const [name, group] of legacyGroups) {
+    await prisma.category.updateMany({
+      where: { schoolId: school.id, name, group: null },
+      data: { group },
     });
   }
 
@@ -214,8 +257,8 @@ async function seedDemoItems(schoolId: string, userId: string) {
 
   const unKg = await prisma.unitOfMeasure.findFirstOrThrow({ where: { schoolId, abbreviation: 'kg' } });
   const unUn = await prisma.unitOfMeasure.findFirstOrThrow({ where: { schoolId, abbreviation: 'un' } });
-  const catCereais = await prisma.category.findFirstOrThrow({ where: { schoolId, name: 'Cereais e Grãos' } });
-  const catEscrita = await prisma.category.findFirstOrThrow({ where: { schoolId, name: 'Escrita' } });
+  const catCereais = await prisma.category.findFirstOrThrow({ where: { schoolId, name: 'Estivas' } });
+  const catEscrita = await prisma.category.findFirstOrThrow({ where: { schoolId, name: 'Material escolar' } });
   const local = await prisma.storageLocation.findFirstOrThrow({ where: { schoolId, code: 'ALM-01-A-01' } });
 
   const demo = [

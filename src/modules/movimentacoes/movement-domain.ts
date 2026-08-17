@@ -1,6 +1,7 @@
 // Regras de domínio da movimentação de estoque (puras, sem I/O).
 // Garante: direção correta por tipo, justificativa obrigatória e saldo nunca negativo.
 import { AppError } from '@/lib/errors';
+import { roundQuantity } from '@/lib/number';
 import { MovementDirection, MovementType } from '@/modules/shared/enums';
 
 /** Tipos que aumentam o saldo (entrada de mercadoria). */
@@ -29,8 +30,40 @@ export function directionForType(type: MovementType): MovementDirection {
   return IN_TYPES.has(type) ? MovementDirection.IN : MovementDirection.OUT;
 }
 
+/**
+ * Direção efetiva da movimentação, considerando o sinal do ajuste.
+ * Para AJUSTE, a direção depende do `signedDelta` (positivo = entrada);
+ * espelha a regra de {@link applyMovementLine}, cujo default (sem sinal) é saída.
+ */
+export function resolveDirection(
+  type: MovementType,
+  signedDelta?: number,
+): MovementDirection {
+  if (type === MovementType.AJUSTE) {
+    return signedDelta !== undefined && signedDelta >= 0
+      ? MovementDirection.IN
+      : MovementDirection.OUT;
+  }
+  return directionForType(type);
+}
+
 export function requiresJustification(type: MovementType): boolean {
   return JUSTIFICATION_REQUIRED.has(type);
+}
+
+/**
+ * Tipos de saída cujo propósito é justamente dar baixa em lotes já vencidos ou
+ * avariados. Só esses podem alocar lotes fora da validade; consumo, preparo de
+ * merenda e distribuição nunca devem retirar de lote vencido.
+ */
+const ALLOW_EXPIRED_TYPES: ReadonlySet<MovementType> = new Set([
+  MovementType.PERDA,
+  MovementType.AVARIA,
+  MovementType.PRODUTO_VENCIDO,
+]);
+
+export function allowsExpiredAllocation(type: MovementType): boolean {
+  return ALLOW_EXPIRED_TYPES.has(type);
 }
 
 export interface MovementLineInput {
@@ -81,11 +114,12 @@ export function applyMovementLine(
       throw new AppError('VALIDATION', 'O ajuste deve ter magnitude igual à quantidade informada.');
     }
     direction = delta >= 0 ? MovementDirection.IN : MovementDirection.OUT;
-    newBalance = previousBalance + delta;
+    newBalance = roundQuantity(previousBalance + delta);
   } else {
     direction = directionForType(type);
-    newBalance =
-      direction === MovementDirection.IN ? previousBalance + quantity : previousBalance - quantity;
+    newBalance = roundQuantity(
+      direction === MovementDirection.IN ? previousBalance + quantity : previousBalance - quantity,
+    );
   }
 
   if (newBalance < 0) {

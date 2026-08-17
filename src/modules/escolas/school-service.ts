@@ -8,6 +8,7 @@ import { hashPassword } from '@/modules/auth/password';
 import { writeAuditLog } from '@/modules/auditoria/audit-service';
 import { RoleName } from '@/modules/shared/enums';
 import { isSuperAdmin, manageableSchoolIds, type AuthUser } from '@/server/rbac';
+import { withTransaction } from '@/server/tx';
 
 /** Lista as escolas visíveis ao solicitante (admin global vê todas). */
 export async function listSchools(actor: AuthUser) {
@@ -29,25 +30,34 @@ export async function createSchool(
     throw new AppError('FORBIDDEN', 'Apenas o administrador da rede pode criar escolas.');
   }
 
-  const existing = await prisma.school.findUnique({ where: { code: input.code } });
-  if (existing) {
-    throw new AppError('CONFLICT', `Já existe uma escola com o código "${input.code}".`);
+  try {
+    return await withTransaction(async (tx) => {
+      const school = await tx.school.create({
+        data: { name: input.name, code: input.code, address: input.address ?? null },
+      });
+
+      await writeAuditLog(
+        {
+          userId: actor.id,
+          schoolId: school.id,
+          action: 'SCHOOL_CREATE',
+          resource: 'School',
+          resourceId: school.id,
+          after: { name: school.name, code: school.code },
+        },
+        tx,
+      );
+
+      return school;
+    });
+  } catch (err) {
+    // Corrida de código único: a unicidade é garantida pelo banco (não por um
+    // pré-check sujeito a TOCTOU). Traduz para uma mensagem clara.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new AppError('CONFLICT', `Já existe uma escola com o código "${input.code}".`);
+    }
+    throw err;
   }
-
-  const school = await prisma.school.create({
-    data: { name: input.name, code: input.code, address: input.address ?? null },
-  });
-
-  await writeAuditLog({
-    userId: actor.id,
-    schoolId: school.id,
-    action: 'SCHOOL_CREATE',
-    resource: 'School',
-    resourceId: school.id,
-    after: { name: school.name, code: school.code },
-  });
-
-  return school;
 }
 
 export async function updateSchool(
@@ -63,26 +73,31 @@ export async function updateSchool(
   const before = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!before) throw new AppError('NOT_FOUND', 'Escola não encontrada.');
 
-  const school = await prisma.school.update({
-    where: { id: schoolId },
-    data: {
-      ...(data.name !== undefined ? { name: data.name } : {}),
-      ...(data.address !== undefined ? { address: data.address } : {}),
-      ...(data.active !== undefined ? { active: data.active } : {}),
-    },
-  });
+  return withTransaction(async (tx) => {
+    const school = await tx.school.update({
+      where: { id: schoolId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+      },
+    });
 
-  await writeAuditLog({
-    userId: actor.id,
-    schoolId,
-    action: 'SCHOOL_CREATE',
-    resource: 'School',
-    resourceId: schoolId,
-    before: { name: before.name, active: before.active },
-    after: { name: school.name, active: school.active },
-  });
+    await writeAuditLog(
+      {
+        userId: actor.id,
+        schoolId,
+        action: 'SCHOOL_UPDATE',
+        resource: 'School',
+        resourceId: schoolId,
+        before: { name: before.name, active: before.active },
+        after: { name: school.name, active: school.active },
+      },
+      tx,
+    );
 
-  return school;
+    return school;
+  });
 }
 
 // ------------------------------------------------------- Provisionamento de tenant

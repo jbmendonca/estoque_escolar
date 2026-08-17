@@ -12,6 +12,7 @@ function item(over: Partial<ItemUsage> & { itemId: string }): ItemUsage {
     unit: 'un',
     module: 'FOOD',
     categoryName: 'Cat',
+    categoryGroup: null,
     consumed,
     movements: 0,
     balance,

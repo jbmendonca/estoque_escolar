@@ -28,6 +28,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Saídas', href: '/merenda/saidas', permission: 'movement.create', module: ModuleType.FOOD },
       { label: 'Lotes e Validades', href: '/merenda/lotes', permission: 'item.view', module: ModuleType.FOOD },
       { label: 'Movimentações', href: '/merenda/movimentacoes', permission: 'movement.view', module: ModuleType.FOOD },
+      { label: 'Consumo diário', href: '/merenda/consumo-diario', permission: 'report.view', module: ModuleType.FOOD },
       { label: 'Relatórios', href: '/merenda/relatorios', permission: 'report.view', module: ModuleType.FOOD },
     ],
   },
@@ -39,6 +40,15 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Distribuições/Saídas', href: '/materiais/distribuicoes', permission: 'movement.create', module: ModuleType.SCHOOL_MATERIAL },
       { label: 'Movimentações', href: '/materiais/movimentacoes', permission: 'movement.view', module: ModuleType.SCHOOL_MATERIAL },
       { label: 'Relatórios', href: '/materiais/relatorios', permission: 'report.view', module: ModuleType.SCHOOL_MATERIAL },
+    ],
+  },
+  {
+    title: 'Compras e Sugestões',
+    items: [
+      { label: 'Painel de compras', href: '/compras', permission: 'purchase.view' },
+      { label: 'Lista inteligente', href: '/compras/sugestoes', permission: 'purchase.view' },
+      { label: 'Solicitações', href: '/compras/solicitacoes', permission: 'purchase.view' },
+      { label: 'Listas de compras', href: '/compras/listas', permission: 'purchase.view' },
     ],
   },
   {

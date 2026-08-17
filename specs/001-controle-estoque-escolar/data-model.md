@@ -22,7 +22,15 @@ ReviewStatus      = NAO_APLICAVEL | PENDENTE_REVISAO | REVISADO
 DistributionTarget= ALUNO | TURMA | PROFESSOR | SETOR | ATIVIDADE | OUTRO
 AuditAction       = LOGIN | USER_CREATE | USER_UPDATE | ITEM_CREATE | ITEM_UPDATE | MOVEMENT
                   | ADJUSTMENT | ADJUSTMENT_REVIEW | CANCELLATION | PERMISSION_CHANGE | SCHOOL_CREATE
+                  | PURCHASE_REQUEST | PURCHASE_REVIEW | PURCHASE_LIST
 InventoryStatus   = ABERTO | EM_CONTAGEM | FECHADO | CANCELADO
+CategoryGroup     = ESTIVAS | PROTEINAS | HORTALICAS | FRUTAS | BEBIDAS          # merenda
+                  | MATERIAL_ESCRITORIO | MATERIAL_ESCOLAR | LIMPEZA | INFORMATICA
+                  | ARTES | MATERIAL_PEDAGOGICO | OUTROS                         # materiais
+PurchasePriority      = BAIXA | MEDIA | ALTA
+PurchaseRequestStatus = PENDENTE | APROVADA | REJEITADA | COMPRADA | RECEBIDA | CANCELADA
+PurchaseListStatus    = ABERTA | ENVIADA | CONCLUIDA | CANCELADA
+PurchaseItemSource    = SUGESTAO | SOLICITACAO | MANUAL
 ```
 
 ## Entidades
@@ -59,8 +67,11 @@ Unidade responsável por um estoque.
 - Regra: define quais escolas o usuário acessa; Administrador ignora o vínculo (acesso global).
 
 ### 8. Category (Categoria)
-- `id`, `schoolId`, `name`, `module` (`ModuleType`), `active`, timestamps, `createdById?`.
+- `id`, `schoolId`, `name`, `module` (`ModuleType`), `group?` (`CategoryGroup`), `active`,
+  timestamps, `createdById?`.
 - Único (schoolId, module, name).
+- O `name` é livre por escola; o `group` é o agrupamento canônico usado em relatórios, no consumo
+  diário de alimentos e na lista de compras (permite comparar escolas com nomenclaturas diferentes).
 
 ### 9. UnitOfMeasure (Unidade de Medida)
 - `id`, `schoolId?` (ou global), `name` (ex.: "Quilograma"), `abbreviation` (ex.: "kg"), `active`,
@@ -148,6 +159,28 @@ Atributos comuns aos dois módulos, diferenciados por `module`.
 - `id`, `schoolId`, `key` (ex.: `nearExpiryDays`), `value`, `updatedAt`, `updatedById?`.
 - Guarda o parâmetro configurável de "próximo do vencimento" (default 30 dias) e afins.
 
+### 24. PurchaseRequest (Solicitação de aquisição)
+- `id`, `number` (`SOL-000001`, único), `schoolId`, `module`, `itemId?`, `itemDescription?`,
+  `categoryGroup?`, `quantity`, `justification`, `priority`, `status`, `requestedById`,
+  `approvedById?`/`approvedAt?`, `purchasedById?`/`purchasedAt?`, `receivedById?`/`receivedAt?`,
+  `decisionNote?`, `purchaseListId?`, timestamps.
+- `itemId` nulo = material ainda não cadastrado (descrito livremente pelo solicitante).
+- Fluxo: `PENDENTE → APROVADA → COMPRADA → RECEBIDA`; `REJEITADA`/`CANCELADA` são terminais.
+
+### 25. PurchaseRequestEvent (Histórico da solicitação) *(append-only)*
+- `id`, `requestId`, `fromStatus?`, `toStatus`, `userId`, `note?`, `createdAt`.
+- Uma linha por transição — registra quem solicitou, aprovou, comprou e recebeu.
+
+### 26. PurchaseList (Lista de compras)
+- `id`, `number` (`LC-000001`, único), `schoolId`, `module`, `title?`, `notes?`, `status`,
+  `periodDays`, `createdById`, `closedById?`, `closedAt?`, timestamps.
+
+### 27. PurchaseListItem (Linha da lista de compras)
+- `id`, `listId`, `itemId`, `requestId?`, `quantity`, `currentQuantity`, `minStock`, `dailyAvg`,
+  `coverageDays?`, `priority`, `source` (`PurchaseItemSource`), `notes?`, `createdAt`.
+- Único (listId, itemId). Congela os números do estoque no momento da geração, para que a lista
+  continue auditável mesmo depois de o saldo mudar.
+
 ## Relacionamentos (resumo)
 
 ```text
@@ -160,6 +193,10 @@ Item 1—1 Stock
 StockMovement 1—N StockMovementItem N—1 Item (e opcional FoodBatch)
 Inventory 1—N InventoryItem
 StockMovement 1—1 ReviewNotification    (apenas type=AJUSTE)
+School 1—N PurchaseRequest | PurchaseList
+PurchaseRequest 1—N PurchaseRequestEvent
+PurchaseList 1—N PurchaseListItem N—1 Item (e opcional PurchaseRequest)
+PurchaseList 1—N PurchaseRequest        (solicitações incorporadas à lista)
 ```
 
 ## Regras de negócio (invariantes) mapeadas às FRs

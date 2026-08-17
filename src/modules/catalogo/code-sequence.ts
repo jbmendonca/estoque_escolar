@@ -16,6 +16,14 @@ export function itemScope(module: ModuleType): string {
   return itemSequenceScope(module);
 }
 
+export function purchaseRequestScope(schoolId: string): string {
+  return `PURCHASE_REQUEST:${schoolId}`;
+}
+
+export function purchaseListScope(schoolId: string): string {
+  return `PURCHASE_LIST:${schoolId}`;
+}
+
 /**
  * Reserva o próximo valor da sequência de forma atômica (UPSERT + RETURNING).
  * Concorrência segura: o UPDATE serializa na linha da sequência.

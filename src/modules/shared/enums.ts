@@ -34,6 +34,68 @@ export const ReviewStatus = {
 } as const;
 export type ReviewStatus = (typeof ReviewStatus)[keyof typeof ReviewStatus];
 
+/**
+ * Grupo canônico das categorias. O nome da categoria continua livre por escola;
+ * o grupo é o que o sistema usa para separar alimentos (estivas, proteínas,
+ * hortaliças, bebidas, frutas) e materiais (escritório, limpeza, informática...).
+ */
+export const CategoryGroup = {
+  ESTIVAS: 'ESTIVAS',
+  PROTEINAS: 'PROTEINAS',
+  HORTALICAS: 'HORTALICAS',
+  FRUTAS: 'FRUTAS',
+  BEBIDAS: 'BEBIDAS',
+  MATERIAL_ESCRITORIO: 'MATERIAL_ESCRITORIO',
+  MATERIAL_ESCOLAR: 'MATERIAL_ESCOLAR',
+  LIMPEZA: 'LIMPEZA',
+  INFORMATICA: 'INFORMATICA',
+  ARTES: 'ARTES',
+  MATERIAL_PEDAGOGICO: 'MATERIAL_PEDAGOGICO',
+  OUTROS: 'OUTROS',
+} as const;
+export type CategoryGroup = (typeof CategoryGroup)[keyof typeof CategoryGroup];
+
+export const PurchasePriority = {
+  BAIXA: 'BAIXA',
+  MEDIA: 'MEDIA',
+  ALTA: 'ALTA',
+} as const;
+export type PurchasePriority = (typeof PurchasePriority)[keyof typeof PurchasePriority];
+
+export const PurchaseRequestStatus = {
+  PENDENTE: 'PENDENTE',
+  APROVADA: 'APROVADA',
+  REJEITADA: 'REJEITADA',
+  COMPRADA: 'COMPRADA',
+  RECEBIDA: 'RECEBIDA',
+  CANCELADA: 'CANCELADA',
+} as const;
+export type PurchaseRequestStatus =
+  (typeof PurchaseRequestStatus)[keyof typeof PurchaseRequestStatus];
+
+export const PurchaseListStatus = {
+  ABERTA: 'ABERTA',
+  ENVIADA: 'ENVIADA',
+  CONCLUIDA: 'CONCLUIDA',
+  CANCELADA: 'CANCELADA',
+} as const;
+export type PurchaseListStatus = (typeof PurchaseListStatus)[keyof typeof PurchaseListStatus];
+
+export const PurchaseItemSource = {
+  SUGESTAO: 'SUGESTAO',
+  SOLICITACAO: 'SOLICITACAO',
+  MANUAL: 'MANUAL',
+} as const;
+export type PurchaseItemSource = (typeof PurchaseItemSource)[keyof typeof PurchaseItemSource];
+
+/** Saúde do estoque exibida no painel: 🔴 crítico, 🟡 atenção, 🟢 adequado. */
+export const StockHealth = {
+  CRITICO: 'CRITICO',
+  ATENCAO: 'ATENCAO',
+  ADEQUADO: 'ADEQUADO',
+} as const;
+export type StockHealth = (typeof StockHealth)[keyof typeof StockHealth];
+
 export const ExpiryStatus = {
   OK: 'OK',
   NEAR_EXPIRY: 'NEAR_EXPIRY',

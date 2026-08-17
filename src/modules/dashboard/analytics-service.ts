@@ -5,19 +5,16 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { classifyExpiry } from '@/modules/lotes/expiry';
 import { ExpiryStatus, ModuleType } from '@/modules/shared/enums';
-import { can, isAdmin, type AuthUser } from '@/server/rbac';
+import { isAdmin, type AuthUser } from '@/server/rbac';
+
+// Fonte única da política de módulos visíveis: definida em rbac.ts e reexportada
+// aqui por conveniência dos consumidores do painel.
+export { visibleModules } from '@/server/rbac';
 
 export interface AnalyticsOptions {
   /** Janela de análise em dias (padrão 30). */
   days?: number;
   nearExpiryDays?: number;
-}
-
-/** Módulos que o usuário pode ver (Merendeira só FOOD, Assistente só MATERIAL). */
-export function visibleModules(user: AuthUser, schoolId?: string): ModuleType[] {
-  return [ModuleType.FOOD, ModuleType.SCHOOL_MATERIAL].filter((module) =>
-    can(user, 'item.view', { schoolId, module }),
-  );
 }
 
 /** Filtro SQL de escola: admin vê tudo; demais, apenas as suas. */
@@ -187,6 +184,8 @@ export interface ItemUsage {
   unit: string;
   module: string;
   categoryName: string;
+  /** Grupo canônico da categoria (estivas, proteínas, limpeza...). */
+  categoryGroup: string | null;
   consumed: number;
   movements: number;
   balance: number;
@@ -213,6 +212,7 @@ export async function getItemUsage(
       unit: string;
       module: string;
       categoryName: string;
+      categoryGroup: string | null;
       consumed: number | null;
       movements: number | null;
       balance: number | null;
@@ -226,6 +226,7 @@ export async function getItemUsage(
              u."abbreviation"  AS unit,
              i."module"::text  AS module,
              c."name"          AS "categoryName",
+             c."group"::text   AS "categoryGroup",
              COALESCE(SUM(smi."quantity") FILTER (WHERE m."direction" = 'OUT'), 0)::float8 AS consumed,
              COUNT(smi."id")   FILTER (WHERE m."direction" = 'OUT')                        AS movements,
              COALESCE(MAX(s."quantity"), 0)::float8                                        AS balance,
@@ -241,7 +242,7 @@ export async function getItemUsage(
       WHERE ${itemSchoolSql(user)}
         AND ${modulesSql(modules, 'i')}
         AND i."active" = TRUE
-      GROUP BY i."id", i."code", i."name", u."abbreviation", i."module", c."name", i."minStock"
+      GROUP BY i."id", i."code", i."name", u."abbreviation", i."module", c."name", c."group", i."minStock"
     `,
   );
 
@@ -256,6 +257,7 @@ export async function getItemUsage(
       unit: r.unit,
       module: r.module,
       categoryName: r.categoryName,
+      categoryGroup: r.categoryGroup,
       consumed,
       movements: Number(r.movements ?? 0),
       balance,

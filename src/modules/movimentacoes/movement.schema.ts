@@ -36,11 +36,11 @@ export const createMovementSchema = z
   .object({
     module: z.nativeEnum(ModuleType),
     type: z.nativeEnum(MovementType),
-    justification: z.string().trim().min(1).optional(),
-    notes: z.string().optional(),
-    referenceDocument: z.string().optional(),
+    justification: z.string().trim().min(1).max(1000).optional(),
+    notes: z.string().max(1000).optional(),
+    referenceDocument: z.string().max(200).optional(),
     distributionTarget: z.enum(DistributionTargetValues).optional(),
-    distributionTargetLabel: z.string().optional(),
+    distributionTargetLabel: z.string().max(200).optional(),
     signedDelta: z.number().optional(),
     items: z.array(movementItemSchema).min(1, 'Informe ao menos um item.'),
   })

@@ -1,6 +1,5 @@
 // Política de autorização (RBAC) + escopo de escola. Negar por padrão.
-import type { ModuleType } from '@/modules/shared/enums';
-import { RoleName } from '@/modules/shared/enums';
+import { ModuleType, RoleName } from '@/modules/shared/enums';
 
 export interface PermissionRef {
   key: string;
@@ -103,4 +102,31 @@ export function can(user: AuthUser, permissionKey: string, ctx: AccessContext = 
 export function schoolScopeFilter(user: AuthUser): { schoolId?: { in: string[] } } {
   if (isAdmin(user)) return {};
   return { schoolId: { in: user.schoolIds } };
+}
+
+const ALL_MODULES: ModuleType[] = [ModuleType.FOOD, ModuleType.SCHOOL_MATERIAL];
+
+/**
+ * Módulos que o usuário pode visualizar. Usa `item.view` como proxy do acesso a
+ * cada módulo (os papéis têm as permissões espelhadas por módulo). Administrador
+ * global enxerga ambos.
+ */
+export function visibleModules(user: AuthUser, schoolId?: string): ModuleType[] {
+  if (isAdmin(user)) return ALL_MODULES;
+  return ALL_MODULES.filter((module) => can(user, 'item.view', { schoolId, module }));
+}
+
+/**
+ * Resolve os módulos a filtrar numa listagem: interseção entre os visíveis pelo
+ * usuário e o módulo solicitado (quando informado). Lista vazia => a consulta
+ * não deve retornar nada (o usuário pediu um módulo ao qual não tem acesso).
+ * Impede o bypass de escopo por omissão do parâmetro `module`.
+ */
+export function resolveVisibleModules(
+  user: AuthUser,
+  schoolId: string | undefined,
+  requested?: ModuleType | null,
+): ModuleType[] {
+  const allowed = visibleModules(user, schoolId);
+  return requested ? allowed.filter((m) => m === requested) : allowed;
 }

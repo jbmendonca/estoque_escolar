@@ -52,6 +52,7 @@ enum DistributionTarget {
 
 enum AuditAction {
   LOGIN
+  LOGIN_FAILED
   USER_CREATE
   USER_UPDATE
   ITEM_CREATE
@@ -62,6 +63,59 @@ enum AuditAction {
   CANCELLATION
   PERMISSION_CHANGE
   SCHOOL_CREATE
+  SCHOOL_UPDATE
+  PURCHASE_REQUEST
+  PURCHASE_REVIEW
+  PURCHASE_LIST
+}
+
+/// Agrupamento canônico das categorias. O nome da categoria continua livre
+/// (cada escola escreve como quiser), mas o grupo é estável e serve para
+/// relatórios, separação de alimentos e a lista de compras.
+enum CategoryGroup {
+  // Merenda (FOOD)
+  ESTIVAS
+  PROTEINAS
+  HORTALICAS
+  FRUTAS
+  BEBIDAS
+  // Materiais (SCHOOL_MATERIAL)
+  MATERIAL_ESCRITORIO
+  MATERIAL_ESCOLAR
+  LIMPEZA
+  INFORMATICA
+  ARTES
+  MATERIAL_PEDAGOGICO
+  OUTROS
+}
+
+enum PurchasePriority {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+/// Fluxo da solicitação de aquisição: pendente → aprovada → comprada → recebida.
+enum PurchaseRequestStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  COMPRADA
+  RECEBIDA
+  CANCELADA
+}
+
+enum PurchaseListStatus {
+  ABERTA
+  ENVIADA
+  CONCLUIDA
+  CANCELADA
+}
+
+enum PurchaseItemSource {
+  SUGESTAO
+  SOLICITACAO
+  MANUAL
 }
 
 enum InventoryStatus {
@@ -93,6 +147,8 @@ model School {
   foodBatches  FoodBatch[]
   configs      AppConfig[]
   reviewNotifs ReviewNotification[]
+  purchaseRequests PurchaseRequest[]
+  purchaseLists    PurchaseList[]
 }
 
 model User {
@@ -170,6 +226,8 @@ model Category {
   schoolId  String
   name      String
   module    ModuleType
+  /// Grupo canônico (estivas, proteínas, hortaliças, bebidas, frutas, limpeza...).
+  group     CategoryGroup?
   active    Boolean    @default(true)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
@@ -253,8 +311,11 @@ model Item {
   foodBatches     FoodBatch[]
   movementItems   StockMovementItem[]
   inventoryItems  InventoryItem[]
+  purchaseRequests PurchaseRequest[]
+  purchaseListItems PurchaseListItem[]
 
   @@index([schoolId, module, name])
+  @@index([categoryId])
 }
 
 model ItemCharacteristic {
@@ -306,6 +367,8 @@ model Stock {
   updatedAt DateTime @updatedAt
   school    School   @relation(fields: [schoolId], references: [id])
   item      Item     @relation(fields: [itemId], references: [id])
+
+  @@index([schoolId])
 }
 
 model StockMovement {
@@ -333,6 +396,7 @@ model StockMovement {
 
   @@index([schoolId, createdAt])
   @@index([type, createdAt])
+  @@index([userId])
 }
 
 model StockMovementItem {
@@ -390,6 +454,112 @@ model InventoryItem {
   foodBatch FoodBatch? @relation(fields: [foodBatchId], references: [id])
 }
 
+// ---------------- Compras e Sugestões ----------------
+
+/// Solicitação de aquisição feita por funcionário/professor.
+/// O histórico completo (quem solicitou, quem aprovou, quem comprou/recebeu)
+/// fica em PurchaseRequestEvent — a linha aqui guarda apenas o estado atual.
+model PurchaseRequest {
+  id              String                @id @default(cuid())
+  number          String                @unique
+  schoolId        String
+  module          ModuleType
+  /// Item do catálogo. Nulo quando o solicitante pede algo ainda não cadastrado.
+  itemId          String?
+  /// Descrição livre do material quando não há item cadastrado.
+  itemDescription String?
+  categoryGroup   CategoryGroup?
+  quantity        Decimal
+  justification   String
+  priority        PurchasePriority      @default(MEDIA)
+  status          PurchaseRequestStatus @default(PENDENTE)
+  requestedById   String
+  approvedById    String?
+  approvedAt      DateTime?
+  purchasedById   String?
+  purchasedAt     DateTime?
+  receivedById    String?
+  receivedAt      DateTime?
+  /// Motivo da rejeição/cancelamento ou observação da última decisão.
+  decisionNote    String?
+  purchaseListId  String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  school       School             @relation(fields: [schoolId], references: [id])
+  item         Item?              @relation(fields: [itemId], references: [id])
+  purchaseList PurchaseList?      @relation(fields: [purchaseListId], references: [id])
+  events       PurchaseRequestEvent[]
+  listItems    PurchaseListItem[]
+
+  @@index([schoolId, status, createdAt])
+  @@index([itemId, status])
+}
+
+/// Trilha imutável de mudanças de status da solicitação (append-only).
+model PurchaseRequestEvent {
+  id         String                 @id @default(cuid())
+  requestId  String
+  fromStatus PurchaseRequestStatus?
+  toStatus   PurchaseRequestStatus
+  userId     String
+  note       String?
+  createdAt  DateTime               @default(now())
+
+  request PurchaseRequest @relation(fields: [requestId], references: [id])
+
+  @@index([requestId, createdAt])
+}
+
+/// Lista de compras gerada a partir das sugestões e/ou solicitações aprovadas.
+model PurchaseList {
+  id          String             @id @default(cuid())
+  number      String             @unique
+  schoolId    String
+  module      ModuleType
+  title       String?
+  notes       String?
+  status      PurchaseListStatus @default(ABERTA)
+  /// Janela de consumo (em dias) usada para calcular as sugestões desta lista.
+  periodDays  Int                @default(30)
+  createdById String
+  closedById  String?
+  closedAt    DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  school   School             @relation(fields: [schoolId], references: [id])
+  items    PurchaseListItem[]
+  requests PurchaseRequest[]
+
+  @@index([schoolId, status, createdAt])
+}
+
+/// Linha da lista de compras. Congela os números do momento da geração para
+/// que a lista continue auditável mesmo depois de o estoque mudar.
+model PurchaseListItem {
+  id              String             @id @default(cuid())
+  listId          String
+  itemId          String
+  requestId       String?
+  quantity        Decimal
+  currentQuantity Decimal
+  minStock        Decimal
+  dailyAvg        Decimal
+  coverageDays    Int?
+  priority        PurchasePriority
+  source          PurchaseItemSource @default(SUGESTAO)
+  notes           String?
+  createdAt       DateTime           @default(now())
+
+  list    PurchaseList     @relation(fields: [listId], references: [id])
+  item    Item             @relation(fields: [itemId], references: [id])
+  request PurchaseRequest? @relation(fields: [requestId], references: [id])
+
+  @@unique([listId, itemId])
+  @@index([listId])
+}
+
 // ---------------- Auditoria / apoio ----------------
 
 model AuditLog {
@@ -408,6 +578,8 @@ model AuditLog {
 
   @@index([action, createdAt])
   @@index([schoolId, createdAt])
+  @@index([userId])
+  @@index([resource, resourceId])
 }
 
 model ReviewNotification {

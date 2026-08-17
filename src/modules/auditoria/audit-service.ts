@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 
 export type AuditActionKey =
   | 'LOGIN'
+  | 'LOGIN_FAILED'
   | 'USER_CREATE'
   | 'USER_UPDATE'
   | 'ITEM_CREATE'
@@ -14,7 +15,11 @@ export type AuditActionKey =
   | 'ADJUSTMENT_REVIEW'
   | 'CANCELLATION'
   | 'PERMISSION_CHANGE'
-  | 'SCHOOL_CREATE';
+  | 'SCHOOL_CREATE'
+  | 'SCHOOL_UPDATE'
+  | 'PURCHASE_REQUEST'
+  | 'PURCHASE_REVIEW'
+  | 'PURCHASE_LIST';
 
 export interface AuditInput {
   userId?: string | null;

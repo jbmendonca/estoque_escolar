@@ -206,6 +206,49 @@ insuficiente), `422` validação.
 
 ---
 
+## Compras e Sugestões
+
+### GET /api/purchases/suggestions
+- Perm: `purchase.view` (respeita o módulo do perfil).
+- Query: `module?`, `categoryGroup?`, `days?` (janela de histórico, default 90), `schoolId?`.
+- 200: `{ data: [ { itemId, code, name, unit, categoryGroup, balance, minStock, consumed,
+  dailyAvg, pendingQty, coverageDays, suggestedQty, priority, health, belowMin, messages[] } ] }`
+- Cálculo (sem gravar nada): estoque atual + estoque mínimo + consumo médio + já solicitado.
+
+### GET /api/purchases/requests
+- Perm: `purchase.view`. Query: `module?`, `status?`, `mine=1`, paginação.
+
+### POST /api/purchases/requests
+- Perm: `purchase.request` (no módulo da solicitação).
+- Body: `{ module, itemId? | itemDescription?, categoryGroup?, quantity, justification,
+  priority?, schoolId? }` — exige item do catálogo **ou** descrição livre.
+- 201: solicitação `PENDENTE` com número `SOL-000001` e primeiro evento de histórico.
+
+### PATCH /api/purchases/requests/{id}
+- Body: `{ status, note? }`. Avança o fluxo `PENDENTE → APROVADA → COMPRADA → RECEBIDA`.
+- Perm por etapa: aprovar/rejeitar = `purchase.approve`; comprar/receber = `purchase.manage`.
+  O próprio solicitante pode cancelar enquanto estiver `PENDENTE`.
+- `REJEITADA`/`CANCELADA` exigem `note` (motivo). Transição fora do fluxo → `409`.
+- Grava `PurchaseRequestEvent` + `AuditLog(PURCHASE_REVIEW)`.
+
+### GET /api/purchases/requests/{id}
+- 200: solicitação com o histórico completo (`events`).
+
+### GET /api/purchases/lists
+- Perm: `purchase.view`. Query: `module?`, `status?`, paginação.
+
+### POST /api/purchases/lists
+- Perm: `purchase.manage`.
+- Body: `{ module, items: [{ itemId, quantity?, source?, notes? }], requestIds: [], title?,
+  notes?, days?, schoolId? }` — pelo menos um item ou uma solicitação.
+- 201: lista `LC-000001` com os números do estoque congelados; as solicitações informadas ficam
+  vinculadas à lista. Solicitação já vinculada ou fora de `PENDENTE`/`APROVADA` → `409`.
+
+### PATCH /api/purchases/lists/{id}
+- Perm: `purchase.manage`. Body: `{ status }` — `ABERTA → ENVIADA → CONCLUIDA`, ou `CANCELADA`.
+
+---
+
 ## Auditoria
 
 ### GET /api/audit
@@ -226,4 +269,8 @@ insuficiente), `422` validação.
 | `inventory.close` | /inventories/{id}/close | SECRETARIO/GESTOR conforme config |
 | `report.view` | /api/reports/* | todos conforme escopo |
 | `audit.view` | /api/audit | ADMIN, GESTOR (própria escola) |
+| `purchase.view` | GET /api/purchases/* | todos conforme escopo e módulo |
+| `purchase.request` | POST /api/purchases/requests | COORDENADOR, SECRETARIO, MERENDEIRA (FOOD), ASSISTENTE (MATERIAL) |
+| `purchase.approve` | PATCH /api/purchases/requests/{id} (aprovar/rejeitar) | GESTOR, ADMIN_ESCOLA, ADMIN |
+| `purchase.manage` | /api/purchases/lists*, comprar/receber | SECRETARIO, GESTOR, ADMIN_ESCOLA, ADMIN |
 | `user.manage`, `school.manage`, `permission.manage` | administração | ADMIN |

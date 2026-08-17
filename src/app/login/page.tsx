@@ -86,11 +86,13 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-          Ambiente de desenvolvimento — usuários: <strong>admin@escola.dev</strong>,{' '}
-          <strong>merendeira@escola.dev</strong>, <strong>assistente@escola.dev</strong>. Senha:{' '}
-          <strong>Admin@123</strong>
-        </p>
+        {process.env.NODE_ENV !== 'production' && (
+          <p className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+            Ambiente de desenvolvimento — usuários: <strong>admin@escola.dev</strong>,{' '}
+            <strong>merendeira@escola.dev</strong>, <strong>assistente@escola.dev</strong>. Senha:{' '}
+            <strong>Admin@123</strong>
+          </p>
+        )}
       </div>
     </main>
   );

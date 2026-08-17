@@ -17,6 +17,16 @@ export function formatMovementNumber(sequence: number): string {
   return `MOV-${padSeq(sequence)}`;
 }
 
+/** Número da solicitação de aquisição (SOL-000001). */
+export function formatPurchaseRequestNumber(sequence: number): string {
+  return `SOL-${padSeq(sequence)}`;
+}
+
+/** Número da lista de compras (LC-000001). */
+export function formatPurchaseListNumber(sequence: number): string {
+  return `LC-${padSeq(sequence)}`;
+}
+
 /** Scope de sequência por módulo de item, usado na tabela CodeSequence. */
 export function itemSequenceScope(module: ModuleType): string {
   return `ITEM_${ITEM_PREFIX[module]}`;

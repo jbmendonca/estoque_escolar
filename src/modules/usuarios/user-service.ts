@@ -84,10 +84,25 @@ async function assertCanManageUser(actor: AuthUser, userId: string) {
   const scope = manageableSchoolIds(actor) ?? [];
   const target = await prisma.user.findFirst({
     where: { id: userId, schools: { some: { schoolId: { in: scope } } } },
-    select: { id: true },
+    select: { id: true, roles: { select: { role: { select: { name: true } } } } },
   });
   if (!target) {
     throw new AppError('FORBIDDEN', 'Este usuário não pertence à sua escola.');
+  }
+  // Impede escalonamento de privilégio: não se pode administrar (editar,
+  // desativar ou reescrever papéis de) um usuário que possui algum papel que o
+  // solicitante não poderia conceder — ex.: um administrador de escola tocando
+  // no administrador global. Cobre também a remoção de papéis, já que o alvo
+  // protegido sequer chega a ser modificado.
+  const allowed = assignableRoles(actor).map(String);
+  const protectedRoles = target.roles
+    .map((ur) => ur.role.name)
+    .filter((name) => !allowed.includes(name));
+  if (protectedRoles.length > 0) {
+    throw new AppError(
+      'FORBIDDEN',
+      'Você não pode administrar um usuário com perfil superior ao seu.',
+    );
   }
 }
 

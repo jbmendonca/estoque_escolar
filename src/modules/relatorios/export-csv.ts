@@ -5,17 +5,37 @@ import type { ReportDataset } from '@/modules/relatorios/types';
 const SEP = ';';
 const BOM = '﻿';
 
-function escape(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  if (text.includes(SEP) || text.includes('"') || text.includes('\n')) {
+// Caracteres que, no início de uma célula, fazem o Excel/LibreOffice
+// interpretá-la como fórmula (CSV formula / DDE injection).
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+/** Aplica as regras de citação do CSV (separador, aspas, quebras de linha). */
+function quote(text: string): string {
+  if (
+    text.includes(SEP) ||
+    text.includes('"') ||
+    text.includes('\n') ||
+    text.includes('\r')
+  ) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
 }
 
-/** Números com vírgula decimal, como o Excel pt-BR espera. */
+/**
+ * Escapa um valor de TEXTO para CSV, neutralizando injeção de fórmula:
+ * células iniciadas por `= + - @` TAB ou CR são prefixadas com aspa simples,
+ * que o Excel/LibreOffice tratam como texto literal.
+ */
+function escape(value: unknown): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  const safe = FORMULA_LEAD.test(text) ? `'${text}` : text;
+  return quote(safe);
+}
+
+/** Números com vírgula decimal (gerados pelo sistema — sem risco de fórmula). */
 function cell(value: unknown): string {
-  if (typeof value === 'number') return escape(String(value).replace('.', ','));
+  if (typeof value === 'number') return quote(String(value).replace('.', ','));
   return escape(value);
 }
 

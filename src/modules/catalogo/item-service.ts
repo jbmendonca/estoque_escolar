@@ -63,6 +63,8 @@ export async function createItem(input: CreateItemInput, userId: string) {
 export interface ListItemsParams {
   schoolIds?: string[];
   module?: ModuleType;
+  /** Restringe aos módulos visíveis ao usuário (isolamento Merenda ↔ Material). */
+  modules?: ModuleType[];
   q?: string;
   categoryId?: string;
   storageLocationId?: string;
@@ -80,7 +82,7 @@ export async function listItems(params: ListItemsParams) {
 
   const where: Prisma.ItemWhereInput = {
     ...(params.schoolIds ? { schoolId: { in: params.schoolIds } } : {}),
-    ...(params.module ? { module: params.module } : {}),
+    ...(params.modules ? { module: { in: params.modules } } : params.module ? { module: params.module } : {}),
     ...(params.categoryId ? { categoryId: params.categoryId } : {}),
     ...(params.storageLocationId ? { storageLocationId: params.storageLocationId } : {}),
     ...(params.q

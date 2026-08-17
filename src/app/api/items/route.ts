@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { toErrorResponse, AppError } from '@/lib/errors';
 import { createItem, listItems } from '@/modules/catalogo/item-service';
 import { requirePermission, resolveSchoolId } from '@/server/guard';
-import { isAdmin } from '@/server/rbac';
+import { isAdmin, resolveVisibleModules } from '@/server/rbac';
 import { ModuleType } from '@/modules/shared/enums';
 
 const createItemBody = z.object({
@@ -30,12 +30,16 @@ export async function GET(request: Request) {
       module: moduleParam ?? undefined,
     });
 
+    // Isolamento de módulo mesmo quando `module` é omitido: restringe aos
+    // módulos que o usuário pode ver (impede Merendeira de ler materiais).
+    const modules = resolveVisibleModules(user, schoolId, moduleParam);
+
     const charRaw = url.searchParams.get('characteristic');
     const [charKey, charValue] = charRaw ? charRaw.split(':') : [];
 
     const result = await listItems({
       schoolIds: isAdmin(user) ? undefined : user.schoolIds,
-      module: moduleParam ?? undefined,
+      modules,
       q: url.searchParams.get('q') ?? undefined,
       categoryId: url.searchParams.get('categoryId') ?? undefined,
       storageLocationId: url.searchParams.get('storageLocationId') ?? undefined,

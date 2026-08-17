@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela execuções antigas do mesmo ref quando um novo push chega.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Lint, typecheck, testes e build
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders para o build/prisma generate. Nenhum teste toca o banco.
+      SESSION_SECRET: ci-session-secret-com-mais-de-32-caracteres
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Lint (código-fonte)
+        run: npx eslint src
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Testes unitários
+        run: npm test
+
+      - name: Build de produção
+        run: npm run build

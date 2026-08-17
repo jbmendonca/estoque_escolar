@@ -2,7 +2,7 @@
 // Regra: autorização SEMPRE verificada no servidor (nunca apenas ocultando botões).
 import { AppError } from '@/lib/errors';
 import { getCurrentUser } from '@/server/current-user';
-import { can, type AccessContext, type AuthUser } from '@/server/rbac';
+import { can, canAccessSchool, type AccessContext, type AuthUser } from '@/server/rbac';
 
 export async function requireAuth(): Promise<AuthUser> {
   const user = await getCurrentUser();
@@ -31,7 +31,14 @@ export async function requirePermission(
 
 /** Resolve a escola alvo: usa a informada (validando acesso) ou a única do usuário. */
 export function resolveSchoolId(user: AuthUser, requested?: string | null): string {
-  if (requested) return requested;
+  if (requested) {
+    // Nunca confiar no schoolId do request sem validar posse — defesa direta
+    // contra IDOR entre escolas/prefeituras, independente da ordem de chamada.
+    if (!canAccessSchool(user, requested)) {
+      throw new AppError('FORBIDDEN', 'Você não tem acesso à escola informada.');
+    }
+    return requested;
+  }
   const first = user.schoolIds[0];
   if (!first) {
     throw new AppError('BAD_REQUEST', 'Informe a escola para esta operação.');

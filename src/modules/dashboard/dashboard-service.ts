@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { classifyExpiry } from '@/modules/lotes/expiry';
 import { ExpiryStatus, ModuleType } from '@/modules/shared/enums';
 import type { AuthUser } from '@/server/rbac';
-import { isAdmin } from '@/server/rbac';
+import { schoolScopeFilter } from '@/server/rbac';
 
 export interface DashboardData {
   itemsCount: { food: number; material: number };
@@ -30,7 +30,7 @@ export async function getDashboard(
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
   // Isolamento multi-escola: admin vê tudo, demais apenas suas escolas.
-  const schoolFilter = isAdmin(user) ? {} : { schoolId: { in: user.schoolIds } };
+  const schoolFilter = schoolScopeFilter(user);
 
   const [food, material, stocks, batches, movementsInPeriod, recent] = await Promise.all([
     prisma.item.count({ where: { ...schoolFilter, module: ModuleType.FOOD, active: true } }),

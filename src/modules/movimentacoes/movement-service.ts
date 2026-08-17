@@ -2,14 +2,17 @@
 // Garante: transação PostgreSQL, row lock (FOR UPDATE), saldo nunca negativo,
 // saldo anterior/posterior gravados, FEFO em saídas de merenda e auditoria.
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
 import { AppError } from '@/lib/errors';
-import { applyMovementLine, directionForType } from '@/modules/movimentacoes/movement-domain';
+import {
+  applyMovementLine,
+  resolveDirection,
+  allowsExpiredAllocation,
+} from '@/modules/movimentacoes/movement-domain';
 import { allocateFefo } from '@/modules/lotes/fefo';
 import { formatMovementNumber } from '@/modules/catalogo/code';
 import { nextSequenceValue, movementScope } from '@/modules/catalogo/code-sequence';
 import { writeAuditLog } from '@/modules/auditoria/audit-service';
-import { lockStockRow, lockBatchRow } from '@/server/tx';
+import { withTransaction, lockStockRow, lockBatchRow } from '@/server/tx';
 import { ModuleType, MovementType } from '@/modules/shared/enums';
 import type { CreateMovementInput } from '@/modules/movimentacoes/movement.schema';
 
@@ -58,7 +61,7 @@ export async function createMovement(
 ): Promise<MovementResult> {
   const { userId, schoolId } = ctx;
 
-  return prisma.$transaction(async (tx) => {
+  return withTransaction(async (tx) => {
     // Valida que todos os itens pertencem à escola e ao módulo informados (isolamento).
     const itemIds = [...new Set(input.items.map((i) => i.itemId))];
     const items = await tx.item.findMany({
@@ -79,7 +82,7 @@ export async function createMovement(
         schoolId,
         module: input.module,
         type: input.type,
-        direction: directionForType(input.type),
+        direction: resolveDirection(input.type, input.signedDelta),
         justification: input.justification ?? null,
         notes: input.notes ?? null,
         referenceDocument: input.referenceDocument ?? null,
@@ -92,7 +95,12 @@ export async function createMovement(
 
     const lines: MovementResultLine[] = [];
 
-    for (const line of input.items) {
+    // Ordem de aquisição de locks determinística (por itemId) — impede deadlock
+    // entre movimentações concorrentes que tocam o mesmo conjunto de itens em
+    // ordens diferentes.
+    const orderedItems = [...input.items].sort((a, b) => a.itemId.localeCompare(b.itemId));
+
+    for (const line of orderedItems) {
       if (input.module === ModuleType.FOOD) {
         lines.push(...(await handleFoodLine(tx, { line, input, schoolId, movementId: movement.id })));
       } else {
@@ -172,6 +180,12 @@ async function handleFoodLine(
   tx: Tx,
   { line, input, schoolId, movementId }: LineCtx,
 ): Promise<MovementResultLine[]> {
+  // Trava a linha de Stock do item ANTES de ler qualquer lote. Isso serializa
+  // todas as movimentações concorrentes do mesmo item, eliminando tanto o
+  // lost update do saldo materializado (o recálculo nunca corre em paralelo)
+  // quanto a corrida TOCTOU do FEFO (a leitura de lotes já reflete o commit anterior).
+  await lockStock(tx, line.itemId, schoolId);
+
   const isInbound = input.type === MovementType.ENTRADA || input.type === MovementType.DEVOLUCAO;
 
   if (isInbound) {
@@ -209,7 +223,7 @@ async function handleFoodLine(
       where: { id: batch.id },
       data: { quantity: new Prisma.Decimal(applied.newBalance) },
     });
-    const stockBalance = await syncFoodStock(tx, line.itemId, schoolId);
+    await syncFoodStock(tx, line.itemId, schoolId);
 
     await tx.stockMovementItem.create({
       data: {
@@ -222,7 +236,6 @@ async function handleFoodLine(
       },
     });
 
-    void stockBalance;
     return [
       {
         itemId: line.itemId,
@@ -237,15 +250,18 @@ async function handleFoodLine(
   // Saída de alimento: lote informado ou seleção automática por FEFO.
   const available = await tx.foodBatch.findMany({
     where: line.foodBatchId
-      ? { id: line.foodBatchId, itemId: line.itemId, schoolId }
+      ? { id: line.foodBatchId, itemId: line.itemId, schoolId, active: true }
       : { itemId: line.itemId, schoolId, active: true },
     select: { id: true, expiryDate: true, quantity: true },
     orderBy: { expiryDate: 'asc' },
   });
 
+  // Consumo/preparo/distribuição não podem sair de lote vencido; apenas as
+  // baixas de perda, avaria e produto vencido alocam lotes fora da validade.
   const allocations = allocateFefo(
     available.map((b) => ({ id: b.id, expiryDate: b.expiryDate, quantity: Number(b.quantity) })),
     line.quantity,
+    { referenceDate: new Date(), allowExpired: allowsExpiredAllocation(input.type) },
   );
 
   const results: MovementResultLine[] = [];
@@ -290,14 +306,22 @@ async function handleFoodLine(
   return results;
 }
 
-/** Recalcula o Stock de um item FOOD como a soma dos saldos dos lotes. */
-async function syncFoodStock(tx: Tx, itemId: string, schoolId: string): Promise<number> {
-  const agg = await tx.foodBatch.aggregate({ where: { itemId }, _sum: { quantity: true } });
-  const total = Number(agg._sum.quantity ?? 0);
-  await tx.stock.upsert({
-    where: { itemId },
-    create: { itemId, schoolId, quantity: new Prisma.Decimal(total) },
-    update: { quantity: new Prisma.Decimal(total) },
-  });
-  return total;
+/**
+ * Recalcula o Stock materializado de um item FOOD como a soma dos saldos dos
+ * lotes ATIVOS, em um único statement no banco. O total nunca transita pela
+ * aplicação (evita lost update), e o predicado espelha o do FEFO — lotes
+ * inativos não contam no saldo exibido, pois não podem ser consumidos.
+ * Pré-condição: a linha de Stock já existe e está travada (ver lockStock).
+ */
+async function syncFoodStock(tx: Tx, itemId: string, schoolId: string): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "Stock"
+    SET "quantity" = COALESCE(
+          (SELECT SUM(b."quantity") FROM "FoodBatch" b
+           WHERE b."itemId" = ${itemId} AND b."schoolId" = ${schoolId} AND b."active" = TRUE),
+          0
+        ),
+        "updatedAt" = NOW()
+    WHERE "itemId" = ${itemId}
+  `;
 }
