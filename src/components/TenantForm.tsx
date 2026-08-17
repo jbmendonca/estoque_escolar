@@ -2,6 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ESCOLAS_INEP } from '@/data/escolas-inep';
+
+// Índice por nome (minúsculo) para autocompletar código INEP e endereço ao
+// selecionar uma escola do catálogo do município.
+const ESCOLA_BY_NAME = new Map(ESCOLAS_INEP.map((e) => [e.name.toLowerCase(), e]));
 
 interface PerfilTenant {
   role: string;
@@ -48,6 +53,17 @@ export function TenantForm() {
 
   function update(role: string, patch: Partial<UserDraft>) {
     setDrafts((d) => ({ ...d, [role]: { ...d[role]!, ...patch } }));
+  }
+
+  // Ao escolher uma escola do catálogo do INEP, preenche código e endereço.
+  // Os campos continuam editáveis (para escolas ainda não catalogadas).
+  function onNameChange(value: string) {
+    setName(value);
+    const match = ESCOLA_BY_NAME.get(value.trim().toLowerCase());
+    if (match) {
+      setCode(match.inep);
+      setAddress(match.address);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -132,11 +148,24 @@ export function TenantForm() {
           <input
             id="t-name"
             required
+            list="escolas-inep"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ex.: EMEF Monte Cristo"
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Selecione da lista do INEP ou digite uma escola nova"
+            autoComplete="off"
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
+          <datalist id="escolas-inep">
+            {ESCOLAS_INEP.map((e) => (
+              <option key={e.inep} value={e.name}>
+                {e.inep}
+              </option>
+            ))}
+          </datalist>
+          <p className="mt-1 text-xs text-slate-500">
+            Ao selecionar uma escola do catálogo, o código INEP e o endereço são preenchidos
+            automaticamente. Os campos continuam editáveis.
+          </p>
         </div>
         <div>
           <label htmlFor="t-code" className="block text-sm font-medium text-slate-700">
@@ -147,7 +176,7 @@ export function TenantForm() {
             required
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="Ex.: BV-001"
+            placeholder="Ex.: 14001217 (INEP) ou BV-001"
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -159,6 +188,7 @@ export function TenantForm() {
             id="t-address"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
+            placeholder="Rua, número, bairro. CEP Cidade - UF."
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
