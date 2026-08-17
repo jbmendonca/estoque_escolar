@@ -4,6 +4,10 @@ import { getCurrentUser, getCurrentUserProfile } from '@/server/current-user';
 import { visibleNavigation } from '@/modules/shared/navigation';
 import { LogoutButton } from '@/components/LogoutButton';
 
+// Toda a área autenticada é renderizada sob demanda (lê sessão/cookies); nunca
+// pré-renderizada no build, portanto não exige segredos em build time.
+export const dynamic = 'force-dynamic';
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
